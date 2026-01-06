@@ -2,7 +2,6 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import time
 
 # --- 1. PAGE CONFIG & HIGH-END CSS ---
@@ -33,6 +32,7 @@ st.markdown("""
     }
     .risk-score-high { color: #FF4B4B; font-weight: bold; }
     .risk-score-med { color: #FFAA00; font-weight: bold; }
+    .id-tag { color: #888; font-size: 0.8rem; letter-spacing: 1px; }
     
     /* Hide Default Menus */
     #MainMenu {visibility: hidden;}
@@ -95,25 +95,28 @@ if st.button("↻ REFRESH INTEL", help="Fetch latest live audit data"):
 
 st.title("🛡️ SENTINEL SYSTEM")
 
-# --- 4. THE MAIN LAYOUT (Based on Your Sketch) ---
+# --- 4. THE MAIN LAYOUT ---
 if not df.empty and 'risk_score' in df.columns:
     
-    # CONVERT NUMBERS SAFELY
+    # SAFE CONVERSIONS
     df['risk_score'] = pd.to_numeric(df['risk_score'], errors='coerce').fillna(0)
     df['total_amount'] = pd.to_numeric(df['total_amount'], errors='coerce').fillna(0)
+    # Ensure invoice_id exists (fill N/A if missing)
+    if 'invoice_id' not in df.columns:
+        df['invoice_id'] = 'N/A'
     
     # LOGIC: FIND THE "TOP 9" RISKS
+    # Sort by Risk Score (Desc) then Amount (Desc)
     top_9_df = df.sort_values(by=['risk_score', 'total_amount'], ascending=[False, False]).head(9)
     
     # --- HERO SECTION (Graph Left, Top 9 Right) ---
-    col_graph, col_list = st.columns([3, 1]) # 75% width vs 25% width
+    col_graph, col_list = st.columns([3, 1]) 
     
     with col_graph:
         st.markdown("### 📡 STRATEGIC RISK MATRIX")
         
-        # THE BIG "CLASSY" GRAPH
-        # Scatter Plot: X=Date/ID, Y=Amount, Color=Risk, Size=Risk
-        # This isolates the "Dangerous" big money circles in Red
+        # THE BIG GRAPH (Scatter Plot)
+        # Mouse Hover now shows ID, Vendor, and Amount
         fig = px.scatter(
             df, 
             x="invoice_date", 
@@ -121,10 +124,11 @@ if not df.empty and 'risk_score' in df.columns:
             size="risk_score", 
             color="risk_score",
             hover_name="vendor_name",
+            hover_data=["invoice_id", "total_amount"], 
             color_continuous_scale=['#00CC96', '#FFAA00', '#FF4B4B'], # Traffic Light Colors
             template="plotly_dark",
-            height=500, # Matches height of the list roughly
-            title="Exposure Timeline (Circle Size = Probability of Fraud)"
+            height=500,
+            title="Exposure Timeline (Circle Size = Fraud Probability)"
         )
         fig.update_layout(
             paper_bgcolor="#0E1117", 
@@ -133,63 +137,64 @@ if not df.empty and 'risk_score' in df.columns:
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        # Click to scroll indicator
-        st.markdown('<div class="scroll-down">▼ DETAILED LOGS BELOW ▼</div>', unsafe_allow_html=True)
+        st.markdown('<div class="scroll-down">▼ DETAILED LEDGER BELOW ▼</div>', unsafe_allow_html=True)
 
     with col_list:
         st.markdown("### 🚨 TOP 9 ALERTS")
         
-        # Generate the Top 9 Cards via Code
+        # TOP 9 CARDS LOOP
         for index, row in top_9_df.iterrows():
             vendor = row['vendor_name']
             amt = row['total_amount']
             score = row['risk_score']
+            inv_id = row.get('invoice_id', 'N/A')
+            date = row.get('invoice_date', '')
             
-            # Formatting CSS based on risk
+            # CSS Logic
             score_class = "risk-score-high" if score >= 80 else "risk-score-med"
             
-            # HTML Card Injection
+            # HTML Card
             st.markdown(f"""
             <div class="risk-card">
-                <div style="font-size: 0.9rem; color: #888;">{row['invoice_date']}</div>
-                <div style="font-weight: bold; font-size: 1.1rem;">{vendor}</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    <span>${amt:,.2f}</span>
-                    <span class="{score_class}">RISK: {score:.0f}/100</span>
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="id-tag">{inv_id}</span>
+                    <span style="color: #666; font-size: 0.8rem;">{date}</span>
+                </div>
+                <div style="font-weight: bold; font-size: 1.1rem; margin-top: 2px;">{vendor}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                    <span style="font-family: monospace; font-size: 1.1rem;">${amt:,.2f}</span>
+                    <span class="{score_class}">{score:.0f}/100</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
     st.markdown("---")
     
-    # --- 5. DETAILED DATA BELOW (The Scroll Area) ---
-    st.subheader("📂 Full Evidence Ledger")
+    # --- 5. DETAILED DATA (Clean View) ---
+    st.subheader("📂 Full Transaction Ledger")
     
-    # Clean up flags for display
-    def clean_flags(x):
-        try: 
-            return str(x)[:50] + "..." 
-        except: 
-            return x
-            
-    display_df = df.copy()
-    display_df['risk_flags'] = display_df['risk_flags'].apply(clean_flags)
+    # SELECT ONLY CLEAN COLUMNS (No messy text flags)
+    # The user can just see the score and look up the ID if they care.
+    clean_view = df[['invoice_id', 'invoice_date', 'vendor_name', 'total_amount', 'risk_score']].copy()
     
     st.dataframe(
-        display_df[['invoice_date', 'vendor_name', 'total_amount', 'risk_score', 'risk_flags']],
+        clean_view.sort_values(by="risk_score", ascending=False),
         use_container_width=True,
         column_config={
-            "risk_score": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.0f"),
+            "invoice_id": "Invoice ID",
+            "invoice_date": "Date",
+            "vendor_name": "Vendor",
+            "risk_score": st.column_config.ProgressColumn("Risk Level", min_value=0, max_value=100, format="%.0f"),
             "total_amount": st.column_config.NumberColumn("Amount", format="$%.2f")
-        }
+        },
+        hide_index=True # Hides the 0,1,2 numbering on the left for cleaner look
     )
 
 else:
-    # --- WAITING SCREEN (If Database is empty) ---
+    # --- LOADING SCREEN ---
     st.markdown("""
     <div style="text-align: center; margin-top: 100px;">
         <h1>🛡️ SYSTEM OFFLINE</h1>
-        <p>No audit trail detected in Supabase ledger.</p>
-        <p style="color: #666;">Waiting for neural network ingestion...</p>
+        <p style="color: #666;">Connection established. Waiting for N8N stream...</p>
     </div>
     """, unsafe_allow_html=True)
