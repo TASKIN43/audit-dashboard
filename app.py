@@ -16,7 +16,7 @@ try:
     SUPABASE_URL = st.secrets["https://yiyhascgocesdumzyxro.supabase.co"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except:
-    st.error("Secrets not found! Did you add them to the Streamlit Dashboard settings?")
+    st.error("Secrets are where its supposed to be. DON'T panick")
     st.stop()
 
 # Initialize Connection
