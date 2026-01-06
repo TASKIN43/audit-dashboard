@@ -8,15 +8,13 @@ import json
 st.set_page_config(page_title="Forensic Audit Control Center", layout="wide")
 st.title("🛡️ Sentinel: Autonomous Forensic Audit System")
 
-# 2. DATABASE CONNECTION (The Credentials)
-# REPLACE THE TEXT INSIDE THE QUOTES BELOW
 # 2. DATABASE CONNECTION (SECURE MODE)
 # Instead of pasting keys here, we look for them in the "Secrets" vault
 try:
-    SUPABASE_URL = st.secrets["https://yiyhascgocesdumzyxro.supabase.co"]
+    SUPABASE_URL = st.secrets["SUPABASE_URL_HERE"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except:
-    st.error("Secrets are where its supposed to be. DON'Tpanick")
+    st.error("Secrets are where its supposed to be. DON'T panick")
     st.stop()
 
 # Initialize Connection
