@@ -3,198 +3,178 @@ from supabase import create_client
 import pandas as pd
 import plotly.express as px
 import time
+from groq import Groq
 
-# --- 1. PAGE CONFIG & HIGH-END CSS ---
-st.set_page_config(
-    page_title="SENTINEL | Executive View",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# --- 1. PRESTIGE CONFIG ---
+st.set_page_config(page_title="SENTINEL | OVERWATCH", page_icon="🦅", layout="wide", initial_sidebar_state="collapsed")
 
-# Custom CSS for that "Classy/Dark" Audit look
 st.markdown("""
 <style>
-    /* Remove default Streamlit padding */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
+    /* TITANIUM DARK THEME */
+    .stApp { background-color: #0E1117; }
     
-    /* Card Styling */
+    /* VANTAGE CARD STYLING */
+    .vantage-card {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        border-left: 5px solid #00D2EA; /* Cyber Blue */
+        padding: 20px;
+        margin-top: 15px;
+        border-radius: 0 10px 10px 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    .directive-title { color: #00D2EA; font-weight: bold; letter-spacing: 1px; font-size: 1.1em;}
+    .directive-body { color: #E5E7EB; margin-top: 5px; font-size: 0.95em;}
+    
+    /* Risk Card Styling */
     .risk-card {
         background-color: #1E1E1E;
         border: 1px solid #333;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 10px;
-        font-family: 'Source Sans Pro', sans-serif;
-    }
-    .risk-score-high { color: #FF4B4B; font-weight: bold; }
-    .risk-score-med { color: #FFAA00; font-weight: bold; }
-    .id-tag { color: #888; font-size: 0.8rem; letter-spacing: 1px; }
-    
-    /* Hide Default Menus */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Scroll Indicator */
-    .scroll-down {
-        text-align: center;
-        color: #888;
-        font-size: 0.8rem;
-        margin-top: 20px;
-        animation: bounce 2s infinite;
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 8px;
     }
     
-    @keyframes bounce {
-        0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
-        40% {transform: translateY(-5px);}
-        60% {transform: translateY(-3px);}
-    }
+    /* Divider */
+    hr { border-color: #333; margin: 60px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SECURE DATABASE CONNECTION ---
+# --- 2. CONNECTIONS (DB + AI) ---
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    # We look for all keys. If Groq is missing, the AI button just won't work, but charts will.
+    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    try:
+        groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    except:
+        groq_client = None
 except:
-    st.error("⚠️ SECURE CONNECTION FAILED. Please configure Secrets.")
+    st.error("🔒 SYSTEM LOCK: Credentials missing in Streamlit Secrets.")
     st.stop()
 
-@st.cache_resource
-def init_connection():
-    try:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except:
-        return None
-
-supabase = init_connection()
-
-# --- 3. DATA FETCHING (Auto-Retry) ---
+# --- 3. DATA FETCHING ---
 @st.cache_data(ttl=10)
-def fetch_data():
+def fetch_and_cluster_data():
     if not supabase: return pd.DataFrame()
-    for _ in range(3):
+    for _ in range(3): # Retry logic
         try:
             response = supabase.table("audit_ledger").select("*").execute()
             df = pd.DataFrame(response.data)
+            if df.empty: return pd.DataFrame()
+            
+            # Numeric cleanup
+            df['total_amount'] = pd.to_numeric(df['total_amount'], errors='coerce').fillna(0)
+            df['risk_score'] = pd.to_numeric(df['risk_score'], errors='coerce').fillna(0)
+            if 'department_name' not in df.columns: df['department_name'] = 'General_Ops'
             return df
         except:
             time.sleep(1)
     return pd.DataFrame()
 
-df = fetch_data()
+df_master = fetch_and_cluster_data()
 
-# Refresh Logic
-if st.button("↻ REFRESH INTEL", help="Fetch latest live audit data"):
-    st.cache_data.clear()
-    st.rerun()
+st.title("🦅 VICTOR VANTAGE | PROTOCOL")
 
-st.title("🛡️ SENTINEL SYSTEM")
+# --- 4. THE STRATEGIST LOGIC (AGENT 3) ---
+def consult_victor_vantage(dept_df, dept_name):
+    if not groq_client: return "DIRECTIVE: AI_OFFLINE. Please add Groq Key."
+    
+    total_spend = dept_df['total_amount'].sum()
+    risk_spend = dept_df[dept_df['risk_score'] >= 60]['total_amount'].sum()
+    if risk_spend == 0: return "DIRECTIVE ALPHA: SECTOR CLEAN\nMaintain current protocols."
 
-# --- 4. THE MAIN LAYOUT ---
-if not df.empty and 'risk_score' in df.columns:
+    # Identify the specific problem patterns
+    bad_vendors = dept_df[dept_df['risk_score'] >= 80]['vendor_name'].value_counts().head(2).index.tolist()
     
-    # SAFE CONVERSIONS
-    df['risk_score'] = pd.to_numeric(df['risk_score'], errors='coerce').fillna(0)
-    df['total_amount'] = pd.to_numeric(df['total_amount'], errors='coerce').fillna(0)
-    # Ensure invoice_id exists (fill N/A if missing)
-    if 'invoice_id' not in df.columns:
-        df['invoice_id'] = 'N/A'
+    prompt = f"""
+    SYSTEM: You are 'Victor Vantage'. Strategic Consultant.
+    CONTEXT: Auditing Sector '{dept_name}'.
+    DATA: Total Spend ${total_spend}. At-Risk: ${risk_spend}.
+    FLAGGED VENDORS: {", ".join(bad_vendors)}.
     
-    # LOGIC: FIND THE "TOP 9" RISKS
-    # Sort by Risk Score (Desc) then Amount (Desc)
-    top_9_df = df.sort_values(by=['risk_score', 'total_amount'], ascending=[False, False]).head(9)
+    TASK: Write 2 "Directives" to fix this. Not generic advice. Specific to these risks.
+    FORMAT:
+    DIRECTIVE ALPHA: [Command]
+    DIRECTIVE BRAVO: [Command]
+    """
     
-    # --- HERO SECTION (Graph Left, Top 9 Right) ---
-    col_graph, col_list = st.columns([3, 1]) 
-    
-    with col_graph:
-        st.markdown("### 📡 STRATEGIC RISK MATRIX")
-        
-        # THE BIG GRAPH (Scatter Plot)
-        # Mouse Hover now shows ID, Vendor, and Amount
-        fig = px.scatter(
-            df, 
-            x="invoice_date", 
-            y="total_amount", 
-            size="risk_score", 
-            color="risk_score",
-            hover_name="vendor_name",
-            hover_data=["invoice_id", "total_amount"], 
-            color_continuous_scale=['#00CC96', '#FFAA00', '#FF4B4B'], # Traffic Light Colors
-            template="plotly_dark",
-            height=500,
-            title="Exposure Timeline (Circle Size = Fraud Probability)"
+    try:
+        completion = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-70b-8192",
         )
-        fig.update_layout(
-            paper_bgcolor="#0E1117", 
-            plot_bgcolor="#0E1117",
-            font=dict(color="#E0E0E0")
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown('<div class="scroll-down">▼ DETAILED LEDGER BELOW ▼</div>', unsafe_allow_html=True)
+        return completion.choices[0].message.content
+    except Exception as e:
+        return f"DIRECTIVE: ERROR CALCULATING. {e}"
 
-    with col_list:
-        st.markdown("### 🚨 TOP 9 ALERTS")
-        
-        # TOP 9 CARDS LOOP
-        for index, row in top_9_df.iterrows():
-            vendor = row['vendor_name']
-            amt = row['total_amount']
-            score = row['risk_score']
-            inv_id = row.get('invoice_id', 'N/A')
-            date = row.get('invoice_date', '')
-            
-            # CSS Logic
-            score_class = "risk-score-high" if score >= 80 else "risk-score-med"
-            
-            # HTML Card
-            st.markdown(f"""
-            <div class="risk-card">
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="id-tag">{inv_id}</span>
-                    <span style="color: #666; font-size: 0.8rem;">{date}</span>
-                </div>
-                <div style="font-weight: bold; font-size: 1.1rem; margin-top: 2px;">{vendor}</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-family: monospace; font-size: 1.1rem;">${amt:,.2f}</span>
-                    <span class="{score_class}">{score:.0f}/100</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-    st.markdown("---")
-    
-    # --- 5. DETAILED DATA (Clean View) ---
-    st.subheader("📂 Full Transaction Ledger")
-    
-    # SELECT ONLY CLEAN COLUMNS (No messy text flags)
-    # The user can just see the score and look up the ID if they care.
-    clean_view = df[['invoice_id', 'invoice_date', 'vendor_name', 'total_amount', 'risk_score']].copy()
-    
-    st.dataframe(
-        clean_view.sort_values(by="risk_score", ascending=False),
-        use_container_width=True,
-        column_config={
-            "invoice_id": "Invoice ID",
-            "invoice_date": "Date",
-            "vendor_name": "Vendor",
-            "risk_score": st.column_config.ProgressColumn("Risk Level", min_value=0, max_value=100, format="%.0f"),
-            "total_amount": st.column_config.NumberColumn("Amount", format="$%.2f")
-        },
-        hide_index=True # Hides the 0,1,2 numbering on the left for cleaner look
-    )
-
+# --- 5. THE SCROLL LOOP (The "Chaos" Handler) ---
+if df_master.empty:
+    st.info("...Satellite Uplink Established. Waiting for Data...")
 else:
-    # --- LOADING SCREEN ---
-    st.markdown("""
-    <div style="text-align: center; margin-top: 100px;">
-        <h1>🛡️ SYSTEM OFFLINE</h1>
-        <p style="color: #666;">Connection established. Waiting for N8N stream...</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # 1. Get List of every 'Part 1', 'Part 2', 'Chemical', 'Mech' found in the CSV
+    unique_sectors = df_master['department_name'].unique()
+    
+    # 2. Iterate and Create a Dashboard for EACH one
+    for sector in unique_sectors:
+        sector_df = df_master[df_master['department_name'] == sector]
+        
+        # --- SECTOR HEADER ---
+        st.header(f"📍 SECTOR: {sector.upper()}")
+        
+        col_left, col_right = st.columns([2, 1])
+        
+        # --- LEFT: THE RADAR GRAPH ---
+        with col_left:
+            fig = px.scatter(
+                sector_df, 
+                x="invoice_date", y="total_amount", 
+                size="risk_score", color="risk_score",
+                hover_name="vendor_name", hover_data=["invoice_id"],
+                color_continuous_scale=['#00CC96', '#FF4B4B'],
+                template="plotly_dark", height=450,
+                title=f"{sector} // Risk Distribution"
+            )
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # --- RIGHT: TOP 5 TARGETS ---
+        with col_right:
+            st.subheader("🚨 PRIORITY TARGETS")
+            targets = sector_df.sort_values(['risk_score', 'total_amount'], ascending=[False, False]).head(5)
+            
+            for _, row in targets.iterrows():
+                st.markdown(f"""
+                <div class="risk-card">
+                    <div style="font-size:0.8em; color:#888">{row.get('invoice_id','N/A')}</div>
+                    <div style="font-weight:bold; font-size:1.1em">{row['vendor_name']}</div>
+                    <div style="display:flex; justify-content:space-between; margin-top:5px;">
+                         <span style="color:#EEE">${row['total_amount']:,.0f}</span>
+                         <span style="color:#FF4B4B">RISK: {row['risk_score']:.0f}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        # --- BOTTOM: THE VANTAGE BUTTON ---
+        # The ID key ensures clicking one doesn't trigger all of them
+        btn_key = f"vantage_{sector.replace(' ','_')}"
+        
+        if st.button(f"⚡ INITIALIZE VANTAGE PROTOCOL ({sector})", key=btn_key):
+            with st.spinner("Decryption in progress..."):
+                # Call Agent 3
+                intel = consult_victor_vantage(sector_df, sector)
+                
+                # Render Results
+                lines = intel.split('\n')
+                for line in lines:
+                    if "DIRECTIVE" in line:
+                        parts = line.split(':')
+                        title = parts[0]
+                        body = parts[1] if len(parts) > 1 else ""
+                        st.markdown(f"""
+                        <div class="vantage-card">
+                            <div class="directive-title">{title}</div>
+                            <div class="directive-body">{body}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+        
+        # Divider between Sector Reports
+        st.markdown("---")
