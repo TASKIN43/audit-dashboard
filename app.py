@@ -6,81 +6,39 @@ import time
 from groq import Groq
 
 # --- 1. ENTERPRISE CONFIGURATION ---
-st.set_page_config(
-    page_title="VANTAGE SYSTEM",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="VANTAGE CENTRAL COMMAND", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 2. PROFESSIONAL STYLING (CSS) ---
+# --- 2. DARK UI SYSTEM ---
 st.markdown("""
 <style>
-    /* GLOBAL THEME OVERRIDE */
     .stApp { background-color: #0b0c0e; color: #E0E0E0; }
-    
-    /* REMOVE DEFAULT PADDING */
     .block-container { padding-top: 1rem; padding-bottom: 2rem; }
-
-    /* CARD SYSTEM: DATA ENTRY */
-    .data-card {
-        background-color: #16191f;
-        border: 1px solid #2d3035;
-        border-radius: 2px;
-        padding: 16px;
-        margin-bottom: 8px;
-        font-family: 'IBM Plex Mono', monospace;
-    }
     
-    /* CARD SYSTEM: CRITICAL ALERT (Red Stripe) */
-    .card-critical {
-        border-left: 4px solid #FF3B30;
-    }
-    
-    /* CARD SYSTEM: STANDARD (Grey Stripe) */
-    .card-std {
-        border-left: 4px solid #4A4A4A;
-    }
-
-    /* VANTAGE CARD: STRATEGY (Cyan Stripe) */
-    .strategy-card {
+    /* STRATEGY CARD */
+    .strategy-box {
         background-color: #0f172a;
         border-left: 4px solid #00D4FF;
-        border-right: 1px solid #1e293b;
-        border-top: 1px solid #1e293b;
-        border-bottom: 1px solid #1e293b;
         padding: 20px;
-        margin-top: 15px;
-        border-radius: 2px;
+        margin: 15px 0;
     }
-
-    /* TYPOGRAPHY */
-    h1, h2, h3 { letter-spacing: -0.5px; font-weight: 600; }
-    .header-tag { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 1.5px; }
-    .big-stat { font-size: 1.2rem; font-weight: 700; color: #FFF; }
-    .risk-tag-high { color: #FF3B30; font-weight: 700; float: right; }
-    .risk-tag-med { color: #FFD60A; font-weight: 700; float: right; }
     
-    /* SEPARATOR */
-    hr { border-color: #2d3035; margin: 40px 0; }
-    
+    /* TABLE STYLING */
+    .stDataFrame { border: 1px solid #333; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. INFRASTRUCTURE CONNECTION ---
+# --- 3. CONNECTIONS ---
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-    # Graceful degradation if Groq missing
-    try:
-        groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    except:
-        groq_client = None
+    try: groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    except: groq_client = None
 except:
     st.error("SYSTEM HALTED: CREDENTIALS MISSING")
     st.stop()
 
-# --- 4. DATA PIPELINE ---
+# --- 4. DATA LOADING ---
 @st.cache_data(ttl=15)
-def load_ledger():
+def load_master_ledger():
     if not supabase: return pd.DataFrame()
     for _ in range(3):
         try:
@@ -88,45 +46,35 @@ def load_ledger():
             df = pd.DataFrame(response.data)
             if df.empty: return pd.DataFrame()
             
-            # Numeric Sanitization
+            # Numeric & Sanitization
             df['total_amount'] = pd.to_numeric(df['total_amount'], errors='coerce').fillna(0)
             df['risk_score'] = pd.to_numeric(df['risk_score'], errors='coerce').fillna(0)
-            if 'department_name' not in df.columns: df['department_name'] = 'General Operations'
+            if 'department_name' not in df.columns: df['department_name'] = 'Unclassified'
             if 'invoice_id' not in df.columns: df['invoice_id'] = 'N/A'
             return df
-        except:
-            time.sleep(1)
+        except: time.sleep(1)
     return pd.DataFrame()
 
-df_master = load_ledger()
+df = load_master_ledger()
 
-# --- HEADER SECTION ---
-st.markdown("<div class='header-tag'>FORENSIC OVERSIGHT PLATFORM</div>", unsafe_allow_html=True)
-st.markdown("<h1>VANTAGE PROTOCOL v1.0</h1>", unsafe_allow_html=True)
-
-# --- 5. INTELLIGENCE AGENT (The Strategist) ---
-def execute_protocol(dept_df, dept_name):
-    if not groq_client: return "DIRECTIVE: ANALYSIS ENGINE OFFLINE."
+# --- 5. VICTOR VANTAGE AI ---
+def get_vantage_intel(context_df):
+    if not groq_client: return "AI OFFLINE."
     
-    # Financial Intel
-    total = dept_df['total_amount'].sum()
-    risk = dept_df[dept_df['risk_score'] >= 60]['total_amount'].sum()
-    
-    if risk == 0: return "STATUS: OPTIMAL.\nNo intervention required."
-    
-    # Pattern Recognition
-    worst_vendor = dept_df.groupby('vendor_name')['risk_score'].max().idxmax()
+    total = context_df['total_amount'].sum()
+    risk = context_df[context_df['risk_score'] > 60]['total_amount'].sum()
+    worst_vendor = context_df.groupby('vendor_name')['risk_score'].max().idxmax()
     
     prompt = f"""
-    SYSTEM: You are a Corporate Turnaround Architect.
-    CONTEXT: Auditing Department '{dept_name}'.
-    DATA: Exposure ${risk:,.0f} out of ${total:,.0f}. Primary Source: {worst_vendor}.
+    SYSTEM: You are the Chief Risk Architect.
+    CONTEXT: Auditing specific organization vectors.
+    INTEL: Total Flow ${total:,.0f}. At Risk: ${risk:,.0f}. Primary Adversary: {worst_vendor}.
     
-    TASK: Issue 2 strategic directives to remediation.
-    STYLE: Strict. No prose. Military-grade instructions.
+    MISSION: Issue 3 rapid-fire directives. No intro. No filler.
     FORMAT:
-    DIRECTIVE A: [Instruction]
-    DIRECTIVE B: [Instruction]
+    > [DIRECTIVE 1]
+    > [DIRECTIVE 2]
+    > [DIRECTIVE 3]
     """
     
     try:
@@ -135,101 +83,96 @@ def execute_protocol(dept_df, dept_name):
             model="llama3-70b-8192"
         )
         return res.choices[0].message.content
-    except Exception as e:
-        return f"ERR: {e}"
+    except Exception as e: return str(e)
 
-# --- 6. VISUALIZATION ENGINE (Per Department) ---
-if df_master.empty:
-    st.code("WAITING FOR DATA UPLINK...", language="text")
+# --- 6. DASHBOARD UI ---
+
+if df.empty:
+    st.title(" SENTINEL // WAITING FOR UPLINK")
 else:
-    unique_sectors = df_master['department_name'].unique()
+    # --- HEADER STATS (Aggregated) ---
+    st.markdown("###  OPERATIONS OVERVIEW")
     
-    for sector in unique_sectors:
-        # Isolate Data
-        sector_df = df_master[df_master['department_name'] == sector]
-        
-        # Header for Section
-        st.markdown(f"### SECTOR: {sector.upper()}")
-        
-        # Key Metrics Row (Mini Dashboard)
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("Total Throughput", f"${sector_df['total_amount'].sum():,.2f}")
-        with m2:
-            st.metric("Risk Exposure", f"${sector_df[sector_df['risk_score']>60]['total_amount'].sum():,.2f}")
-        with m3:
-            st.metric("Transaction Volume", f"{len(sector_df)}")
-            
-        st.markdown("<div style='height: 10px'></div>", unsafe_allow_html=True)
-        
-        # Main Layout: 70% Matrix / 30% Feed
-        col_main, col_feed = st.columns([2.5, 1])
-        
-        with col_main:
-            # MATRIX GRAPH
-            # Simplified "Dark" Aesthetics
-            fig = px.scatter(
-                sector_df, 
-                x="invoice_date", y="total_amount", 
-                size="risk_score", color="risk_score",
-                color_continuous_scale=['#1C1C1C', '#00D4FF', '#FF3B30'], # Black->Blue->Red
-                hover_name="vendor_name",
-                hover_data=["invoice_id"],
-                template="plotly_dark", height=400,
-                title="RISK PROBABILITY MATRIX"
-            )
-            # Remove chart grid noise for cleaner look
-            fig.update_layout(
-                paper_bgcolor="#0E1117",
-                plot_bgcolor="#0E1117",
-                xaxis=dict(showgrid=False),
-                yaxis=dict(showgrid=True, gridcolor='#222'),
-                margin=dict(l=0, r=0, t=40, b=0)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+    tot_risk = df[df['risk_score']>60]['total_amount'].sum()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Spend", f"${df['total_amount'].sum():,.0f}")
+    m2.metric("Critical Exposure", f"${tot_risk:,.0f}", delta="Alert" if tot_risk > 0 else "Secure", delta_color="inverse")
+    m3.metric("Vendors Audited", len(df['vendor_name'].unique()))
+    m4.metric("Protocol Departments", len(df['department_name'].unique()))
+    
+    st.markdown("---")
 
-        with col_feed:
-            st.markdown("##### PRIORITY ALERTS")
-            
-            # Extract Top 4
-            alerts = sector_df.sort_values(["risk_score", "total_amount"], ascending=False).head(4)
-            
-            for _, row in alerts.iterrows():
-                # Risk Logic
-                risk_val = row['risk_score']
-                is_crit = risk_val >= 80
-                css_class = "card-critical" if is_crit else "card-std"
-                risk_tag_class = "risk-tag-high" if is_crit else "risk-tag-med"
+    # --- MAIN VIEW: THE MASTER CHART ---
+    # One big chart showing everything, colored by Department
+    col_chart, col_ai = st.columns([2, 1])
+    
+    with col_chart:
+        st.subheader("📡 CROSS-SECTOR RISK MAP")
+        fig = px.scatter(
+            df, 
+            x="invoice_date", y="total_amount",
+            size="risk_score", 
+            color="department_name", # This is the key: Colors separate the Depts
+            hover_name="vendor_name",
+            hover_data=["invoice_id", "risk_score"],
+            template="plotly_dark", height=500,
+            title="Entity-Wide Transaction Anomaly Detection"
+        )
+        fig.update_layout(paper_bgcolor="#0b0c0e", plot_bgcolor="#0b0c0e")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_ai:
+        st.subheader("🦅 VICTOR VANTAGE PROTOCOL")
+        # Department Filter for AI
+        dept_options = ["FULL ORGANIZATION"] + list(df['department_name'].unique())
+        target_scope = st.selectbox("SELECT TARGET VECTOR:", dept_options)
+        
+        if st.button("INITIALIZE ANALYSIS", type="primary"):
+            with st.spinner("Compiling Neural Intel..."):
+                # Filter Data based on selection
+                if target_scope == "FULL ORGANIZATION":
+                    scope_df = df
+                else:
+                    scope_df = df[df['department_name'] == target_scope]
+                
+                intel = get_vantage_intel(scope_df)
                 
                 st.markdown(f"""
-                <div class="data-card {css_class}">
-                    <div style="font-size: 0.7rem; color: #666; letter-spacing: 1px;">ID: {row.get('invoice_id', 'N/A')}</div>
-                    <div style="font-weight: 600; margin-top: 4px;">{row['vendor_name']}</div>
-                    <div style="margin-top: 8px;">
-                        <span style="color: #CCC;">${row['total_amount']:,.2f}</span>
-                        <span class="{risk_tag_class}">R: {risk_val:.0f}</span>
+                <div class='strategy-box'>
+                    <div style='color: #00D4FF; font-family: monospace; font-size: 0.9rem;'>
+                        {intel.replace('\n', '<br>')}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
-        # --- THE VANTAGE BLOCK ---
-        st.markdown(f"<div class='header-tag' style='margin-top: 20px;'>STRATEGIC INTERVENTION: {sector.upper()}</div>", unsafe_allow_html=True)
-        
-        btn_key = f"vantage_{sector.replace(' ', '_')}"
-        if st.button("EXECUTE ANALYSIS PROTOCOL", key=btn_key):
-            with st.spinner("Processing Logic Gate..."):
-                intel = execute_protocol(sector_df, sector)
-                
-                # Split output
-                lines = intel.split('\n')
-                for line in lines:
-                    if "DIRECTIVE" in line or "STATUS" in line:
-                         st.markdown(f"""
-                         <div class="strategy-card">
-                            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; color: #00D4FF;">
-                                {line}
-                            </div>
-                         </div>
-                         """, unsafe_allow_html=True)
-        
-        st.markdown("---")
+
+    st.markdown("---")
+
+    # --- MASTER SPREADSHEET ---
+    st.subheader(" UNIFIED EVIDENCE LEDGER")
+    
+    # Filter Tabs
+    # Allows user to see "All" or drill down without leaving the page
+    tab_list = ["ALL"] + list(df['department_name'].unique())
+    tabs = st.tabs(tab_list)
+    
+    # Render Master Table in "ALL", and specific tables in Tabs
+    for i, tab in enumerate(tabs):
+        with tab:
+            if i == 0:
+                view_df = df
+            else:
+                dept_name = tab_list[i]
+                view_df = df[df['department_name'] == dept_name]
+            
+            # Search Bar simulation via text input could go here, but DataFrame has built-in search
+            st.dataframe(
+                view_df.sort_values(by="risk_score", ascending=False),
+                column_config={
+                    "risk_score": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.0f"),
+                    "total_amount": st.column_config.NumberColumn("Amount", format="$%.2f"),
+                    "raw_text": None, # Hide raw json
+                    "risk_flags": None # Hide flag JSON
+                },
+                use_container_width=True,
+                height=500
+            )
