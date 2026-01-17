@@ -5,59 +5,48 @@ import plotly.express as px
 import time
 from groq import Groq
 
-# --- 1. CONFIG: PITCH BLACK / NO EMOJI ---
+# --- 1. CONFIG: BLACK OPS MODE ---
 st.set_page_config(page_title="VANTAGE PROTOCOL", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-    /* GLOBAL BLACK THEME */
-    .stApp { background-color: #000000; color: #E0E0E0; font-family: 'Courier New', monospace; }
+    .stApp { background-color: #000000; color: #CCCCCC; font-family: 'Courier New', monospace; }
     
     /* TYPOGRAPHY */
-    h1, h2, h3 { color: #FFF; letter-spacing: -1px; text-transform: uppercase; font-weight: 800; }
-    div[data-testid="stMarkdownContainer"] p { font-size: 0.95rem; }
-
-    /* LEFT: GRAPH CONTAINER */
-    .graph-box { border-right: 1px solid #333; padding-right: 20px; }
+    h1, h2, h3 { color: #FFFFFF; letter-spacing: -1px; text-transform: uppercase; font-weight: 800; }
     
-    /* RIGHT: INTELLIGENCE CARD */
-    .kill-list-card {
-        background-color: #0a0a0a;
-        border-left: 4px solid #FF3333;
+    /* CARD SYSTEM */
+    .intel-card {
+        background-color: #0D0D0D;
+        border-left: 3px solid #D32F2F; /* Blood Red */
         border-bottom: 1px solid #222;
-        padding: 15px;
-        margin-bottom: 12px;
-        font-family: 'Courier New', monospace;
+        padding: 12px;
+        margin-bottom: 10px;
     }
-    .kill-title { color: #FF3333; font-weight: bold; font-size: 1.0em; margin-bottom: 5px;}
-    .kill-body { color: #DDD; font-size: 0.9em; }
-
-    /* SEPARATOR */
-    hr { border-color: #222; margin: 60px 0; }
+    .intel-header { color: #D32F2F; font-weight: bold; font-size: 0.9em; letter-spacing: 1px; }
+    .intel-body { color: #EEE; font-size: 0.95em; margin-top: 4px; }
     
-    /* BUTTON STYLING (The Trigger) */
+    /* BUTTONS */
     div.stButton > button {
         background-color: #000;
-        border: 1px solid #00D4FF;
-        color: #00D4FF;
-        border-radius: 0px;
+        border: 1px solid #D32F2F;
+        color: #D32F2F;
         width: 100%;
-        padding: 15px;
         font-family: monospace;
         text-transform: uppercase;
         letter-spacing: 2px;
         font-weight: bold;
-        transition: all 0.3s;
+        transition: 0.3s;
     }
     div.stButton > button:hover {
-        background-color: #00D4FF;
+        background-color: #D32F2F;
         color: #000;
-        box-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
     }
+    hr { border-color: #222; margin: 40px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SECURE CONNECTIONS ---
+# --- 2. CONNECTIONS ---
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     try: groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -73,140 +62,146 @@ def load_data():
 
 df = load_data()
 
-# --- 3. AGENT 3 LOGIC (The Consultant) ---
+# --- 3. AGENT 3: THE PATTERN HUNTER ---
 def execute_agent_3(sector_df):
     if not groq_client: return ["// ERROR: AI OFFLINE"]
     
-    # 1. Filter: Only look at Risk > 50 (The noise is ignored)
-    targets = sector_df[sector_df['risk_score'] > 50].sort_values('risk_score', ascending=False).head(9)
+    # --- LOGIC UPDATE: LOWER THE SENSITIVITY THRESHOLD ---
+    # We now grab anything with a score > 30, ensuring we see structuring attempts.
+    # We sort by the highest amount first, as big money is the biggest risk.
+    targets = sector_df[sector_df['risk_score'] > 30].sort_values('total_amount', ascending=False).head(15)
     
-    if targets.empty: return ["// STATUS: NOMINAL. NO LEAKAGE DETECTED."]
+    if targets.empty: return ["// SYSTEM STATUS: CLEAN. NO ANOMALIES ABOVE THRESHOLD."]
 
-    # 2. Extract Evidence for the Prompt
+    # Prepare a dense evidence block for the AI
     evidence_lines = []
     for _, row in targets.iterrows():
-        # Unpack JSON flags safely
+        # Safely extract the issue and approver from the JSON flags
         issue = "ANOMALY"
-        approver = "SYSTEM"
+        approver = "UNKNOWN"
         try:
             import json
             flags = row['risk_flags']
             if isinstance(flags, str): flags = json.loads(flags)
             issue = flags.get('issue', 'ANOMALY').upper()
-            approver = flags.get('approver', 'UNKNOWN').upper()
+            approver = flags.get('approver', 'SYSTEM').upper()
         except: pass
         
-        evidence_lines.append(f"VENDOR: {row['vendor_name']} | AMT: ${row['total_amount']} | ISSUE: {issue} | AUTH: {approver}")
+        evidence_lines.append(f"VENDOR: {row['vendor_name']} | AMT: ${row['total_amount']} | DATE: {row['invoice_date']} | ISSUE: {issue} | AUTH: {approver}")
 
-    # 3. The "McKinsey" Prompt
+    # --- THE AGGRESSIVE PROMPT ---
+    # We are now commanding the AI to hunt for specific patterns in the provided data.
     prompt = f"""
-    SYSTEM: You are a Senior Forensic Partner.
-    CONTEXT: Analyzing Client AP Ledger for Leakage.
+    SYSTEM: You are a Forensic Audit Algorithm. Your only purpose is to find fraud patterns.
+    TASK: Analyze the invoice rows below. DO NOT say 'nominal' or 'no issues'. Your job is to find the patterns, even if they are subtle.
+    
+    HUNT FOR THESE SPECIFIC PATTERNS:
+    1. STRUCTURING: Multiple payments to the same vendor just below a common limit (e.g., $4950, $9900).
+    2. VELOCITY ABUSE: The same vendor paid multiple times in a very short period (e.g., minutes or a few days).
+    3. ROUND NUMBER BIAS: Payments of flat amounts like $500.00, $1000.00, especially for 'Consulting'.
+    4. DUPLICATE PAYMENTS: Identical amounts to the same vendor.
+    
     INPUT DATA:
     {evidence_lines}
     
-    MISSION:
-    Convert raw data into a "Strategic Kill List".
-    Use cold, corporate financial jargon (e.g., "Variance", "Structuring", "Compliance Gap").
-    Focus on the MONEY and the PERSON (Approver).
-    
-    OUTPUT FORMAT (Strict List):
-    [VENDOR NAME] :: [JARGON DESCRIPTION] (Auth: [NAME]) -> [DIRECTIVE]
+    OUTPUT FORMAT (STRICT):
+    [VENDOR] :: [PATTERN DETECTED] (Total Exposure: $X) -> [NAMES OF APPROVERS INVOLVED]
     
     Example:
-    TITANIUM INC :: STRUCTURED LIMIT EVASION (Auth: SARAH J) -> AUDIT PO.
+    TITANIUM CONSULTING :: STRUCTURING <$5k (Exposure: $19,800) -> AUTH: BOARD
+    APEX MACHINERY :: DUPLICATE BILLING (Exposure: $25,000) -> AUTH: MANAGER X
     """
     
     try:
         res = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-70b-8192"
+            model="llama3-70b-8192",
+            temperature=0.1 # Low temperature makes the AI more factual and less creative
         )
         return res.choices[0].message.content.split('\n')
     except: return ["// ERROR: COMPUTATION FAILED"]
 
-# --- 4. RENDER DASHBOARD ---
+# --- 4. DASHBOARD RENDER ---
 st.markdown("<h1>VANTAGE PROTOCOL // OVERSIGHT TERMINAL</h1>")
 
 if not df.empty:
-    # Numeric Cleanup
+    # Cleanup and data extraction
     df['total_amount'] = pd.to_numeric(df['total_amount'], errors='coerce').fillna(0)
     df['risk_score'] = pd.to_numeric(df['risk_score'], errors='coerce').fillna(0)
-    if 'department_name' not in df.columns: df['department_name'] = 'GENERAL_LEDGER'
+    if 'department_name' not in df.columns: df['department_name'] = 'GENERAL'
 
-    # Get Sectors
+    # Extract meta fields for the main table
+    def get_meta(x, key):
+        try:
+            import json
+            if isinstance(x, dict): return x.get(key, '-')
+            return json.loads(x).get(key, '-')
+        except: return '-'
+    df['approver'] = df['risk_flags'].apply(lambda x: get_meta(x, 'approver'))
+    df['description'] = df['risk_flags'].apply(lambda x: get_meta(x, 'description'))
+
     sectors = df['department_name'].unique()
     
     for sector in sectors:
         st.markdown(f"## SECTOR: {sector.upper()}")
-        
         sector_df = df[df['department_name'] == sector]
         
-        # LAYOUT: 50% Graph | 50% Intel
         c1, c2 = st.columns(2)
         
-        # --- LEFT: MONEY FLOW GRAPH ---
+        # --- LEFT: MONEY GRAPH ---
         with c1:
-            st.markdown("#### CAPITAL OUTFLOW (VENDOR VOLUME)")
-            # Group by Vendor to show total cash stack
-            chart_data = sector_df.groupby('vendor_name').agg({
-                'total_amount': 'sum',
-                'risk_score': 'max' # Use worst score for color
-            }).reset_index()
-            
+            st.markdown("#### CAPITAL FLOW")
+            chart_data = sector_df.groupby('vendor_name')['total_amount'].sum().reset_index()
             fig = px.bar(
-                chart_data, 
-                x='vendor_name', y='total_amount',
-                color='total_amount', # The more money, the brighter the bar
-                color_continuous_scale=['#222', '#FF3333'], # Dark to Red
-                height=450
+                chart_data, x='vendor_name', y='total_amount',
+                color='total_amount', color_continuous_scale=['#1a1a1a', '#D32F2F'],
+                height=400
             )
-            
-            fig.update_layout(
-                paper_bgcolor="#000", 
-                plot_bgcolor="#000", 
-                font=dict(color="#888", family="Courier New"),
-                xaxis_title=None, yaxis_title="USD VOLUME"
-            )
+            fig.update_layout(paper_bgcolor="#000", plot_bgcolor="#000", font=dict(color="#888", family="Courier New"))
             st.plotly_chart(fig, use_container_width=True)
 
-        # --- RIGHT: AGENT 3 INTERFACE ---
+        # --- RIGHT: AGENT 3 INTEL ---
         with c2:
-            st.markdown("#### FORENSIC FINDINGS")
+            st.markdown("#### PATTERN RECOGNITION")
+            btn_key = f"scan_{sector}"
             
-            # The Trigger
-            btn_key = f"btn_{sector}"
-            if st.button("INITIALIZE DIAGNOSTIC SCAN", key=btn_key):
-                with st.spinner("AGENT 3: ANALYZING VECTORS..."):
-                    
-                    # CALL AGENT 3
-                    kill_list = execute_agent_3(sector_df)
-                    
-                    # RENDER CARDS
-                    for item in kill_list:
-                        if len(item) > 5: # Filter empty lines
-                            # Formatting the string for display
-                            parts = item.split('::')
-                            title = parts[0] if len(parts) > 0 else "ALERT"
-                            body = parts[1] if len(parts) > 1 else item
-                            
+            if st.button("INITIALIZE FORENSIC SCAN", key=btn_key):
+                with st.spinner("PROCESSING VECTORS..."):
+                    findings = execute_agent_3(sector_df)
+                    for find in findings:
+                        # Render only valid, formatted lines
+                        if len(find) > 5 and "::" in find:
+                            parts = find.split('::')
+                            title = parts[0]
+                            body = parts[1]
                             st.markdown(f"""
-                            <div class="kill-list-card">
-                                <div class="kill-title">{title}</div>
-                                <div class="kill-body">{body}</div>
+                            <div class="intel-card">
+                                <div class="intel-header">{title}</div>
+                                <div class="intel-body">{body}</div>
                             </div>
                             """, unsafe_allow_html=True)
+                        elif "STATUS:" in find:
+                             st.info(find)
             else:
-                # Placeholder State
-                st.markdown("""
-                <div style="border:1px dashed #333; padding:50px; text-align:center; color:#444;">
-                    AWAITING MANUAL TRIGGER
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown("<div style='border:1px dashed #333; padding:40px; text-align:center; color:#555;'>AWAITING TRIGGER</div>", unsafe_allow_html=True)
+
+        # --- BOTTOM: EVIDENCE TABLE ---
+        st.markdown("#### RAW EVIDENCE LEDGER")
+        cols_to_display = ['invoice_id', 'invoice_date', 'description', 'vendor_name', 'total_amount', 'approver', 'risk_score']
+        
+        st.dataframe(
+            sector_df[cols_to_display].sort_values('risk_score', ascending=False),
+            use_container_width=True,
+            column_config={
+                "risk_score": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.0f"),
+                "total_amount": st.column_config.NumberColumn("Amount", format="$%.2f")
+            },
+            hide_index=True
+        )
 
         st.markdown("---")
         
     st.markdown("<center style='color:#444'>[ END OF TRANSMISSION ]</center>", unsafe_allow_html=True)
 
 else:
-    st.markdown("### SYSTEM STANDBY... WAITING FOR UPLINK")
+    st.markdown("### SYSTEM STANDBY... CHECK UPLINK")
