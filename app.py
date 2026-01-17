@@ -58,67 +58,57 @@ def load_data():
 
 df = load_data()
 
-# --- 3. AGENT 3: THE STATISTICIAN (GRAPH READER) ---
+# --- 3. AGENT 3 LOGIC (UPDATED MODEL) ---
 def execute_agent_3(sector_df):
     if not groq_client: return ["// ERROR: AI OFFLINE"]
     
-    # STEP 1: CALCULATE THE GRAPH DATA (Aggregates)
-    # We group by Vendor to see who got the money and how often.
-    # This detects "Structuring" (High Count, Low Avg) and "Velocity" (High Count).
+    # 1. AGGREGATE STATS (Graph Data)
     stats = sector_df.groupby('vendor_name').agg(
         total_spend=('total_amount', 'sum'),
         txn_count=('invoice_id', 'count')
     ).reset_index()
 
-    # STEP 2: FILTER TARGETS (Lowered Thresholds for Sensitivity)
-    # Target anything with >$3,000 spend OR >2 transactions
+    # 2. FILTER ANOMALIES (> $3k OR > 2 Txns)
     targets = stats[
         (stats['total_spend'] > 3000) | 
         (stats['txn_count'] >= 2)
     ].sort_values('total_spend', ascending=False).head(8)
     
-    if targets.empty: 
-        return ["// STATUS: LOW VOLUME. NO STATISTICAL ANOMALIES DETECTED."]
+    if targets.empty: return ["// STATUS: NOMINAL. NO STATISTICAL ANOMALIES."]
 
-    # STEP 3: PREPARE EVIDENCE
+    # 3. EVIDENCE PREP
     evidence_lines = []
     for _, row in targets.iterrows():
-        avg_txn = row['total_spend'] / row['txn_count']
         evidence_lines.append(
-            f"VENDOR: {row['vendor_name']} | TOTAL: ${row['total_spend']:,.0f} | COUNT: {row['txn_count']} | AVG_TICKET: ${avg_txn:,.0f}"
+            f"VENDOR: {row['vendor_name']} | TOTAL: ${row['total_spend']:,.0f} | COUNT: {row['txn_count']}"
         )
 
-    # STEP 4: THE STATISTICIAN PROMPT
+    # 4. PROMPT (Using Llama 3.3)
     prompt = f"""
-    SYSTEM: You are a Forensic Statistician. You analyze Graphs and Data Aggregates.
-    TASK: Look at the Vendor Spend Summary below. Detect anomalies in the distribution.
+    SYSTEM: You are a Forensic Statistician.
+    TASK: Analyze the Vendor Aggregates below. Identify patterns of STRUCTURING, VELOCITY, or CONCENTRATION RISK.
     
-    PATTERNS TO CATCH:
-    1. STRUCTURING: High Count + Low/Medium Average Ticket (Splitting payments).
-    2. VELOCITY: High Count (Frequency abuse).
-    3. CONCENTRATION: Disproportionate Total Spend on one vendor.
-    4. basically any kind of pattern you recognize.
-    
-    INPUT DATA (Vendor Aggregates):
+    INPUT DATA:
     {evidence_lines}
     
-    OUTPUT FORMAT (STRICT):
-    [VENDOR] :: [STATISTICAL OBSERVATION] (Value: $X)
+    OUTPUT FORMAT (Strict):
+    [VENDOR] :: [PATTERN NAME] (Total: $X)
     
     Example:
-    TITANIUM CONSULTING :: HIGH FREQUENCY / LOW AVG (Structuring Risk) (Value: $14k)
+    TITANIUM CONSULTING :: STRUCTURING PATTERN (Total: $14k)
     """
     
     try:
         res = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-70b-8192",
+            # UPDATED MODEL: SOTA Open Source Model
+            model="llama-3.3-70b-versatile",
             temperature=0.1
         )
         return res.choices[0].message.content.split('\n')
     except: return ["// ERROR: COMPUTATION FAILED"]
 
-# --- 4. DASHBOARD RENDER ---
+# --- 4. RENDER ---
 st.markdown("<h1>VANTAGE PROTOCOL // OVERSIGHT TERMINAL</h1>")
 
 if not df.empty:
@@ -143,7 +133,7 @@ if not df.empty:
         
         c1, c2 = st.columns(2)
         
-        # --- LEFT: MONEY GRAPH (Visualizing the Stats) ---
+        # LEFT: GRAPH
         with c1:
             st.markdown("#### CAPITAL FLOW")
             chart_data = sector_df.groupby('vendor_name')['total_amount'].sum().reset_index()
@@ -152,16 +142,13 @@ if not df.empty:
                 color='total_amount', color_continuous_scale=['#1a1a1a', '#D32F2F'],
                 height=400
             )
-            # Clean layout, removed use_container_width arg to stop logs
             fig.update_layout(paper_bgcolor="#000", plot_bgcolor="#000", font=dict(color="#888", family="Courier New"))
-            st.plotly_chart(fig) 
+            st.plotly_chart(fig)
 
-        # --- RIGHT: AGENT 3 INTEL ---
+        # RIGHT: AGENT 3
         with c2:
             st.markdown("#### PATTERN RECOGNITION")
-            btn_key = f"scan_{sector}"
-            
-            if st.button("INITIALIZE FORENSIC SCAN", key=btn_key):
+            if st.button("INITIALIZE FORENSIC SCAN", key=f"btn_{sector}"):
                 with st.spinner("ANALYZING AGGREGATES..."):
                     findings = execute_agent_3(sector_df)
                     for find in findings:
@@ -169,24 +156,18 @@ if not df.empty:
                             parts = find.split('::')
                             title = parts[0]
                             body = parts[1]
-                            st.markdown(f"""
-                            <div class="intel-card">
-                                <div class="intel-header">{title}</div>
-                                <div class="intel-body">{body}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.markdown(f"<div class='intel-card'><div class='intel-header'>{title}</div><div class='intel-body'>{body}</div></div>", unsafe_allow_html=True)
                         elif "STATUS:" in find:
                              st.info(find)
             else:
                 st.markdown("<div style='border:1px dashed #333; padding:40px; text-align:center; color:#555;'>AWAITING TRIGGER</div>", unsafe_allow_html=True)
 
-        # --- BOTTOM: EVIDENCE TABLE ---
+        # BOTTOM: TABLE
         st.markdown("#### RAW EVIDENCE LEDGER")
-        cols_to_display = ['invoice_id', 'invoice_date', 'description', 'vendor_name', 'total_amount', 'approver', 'risk_score']
+        cols = ['invoice_id', 'invoice_date', 'description', 'vendor_name', 'total_amount', 'approver', 'risk_score']
         
-        # Removed use_container_width to stop logs
         st.dataframe(
-            sector_df[cols_to_display].sort_values('risk_score', ascending=False),
+            sector_df[cols].sort_values('risk_score', ascending=False),
             column_config={
                 "risk_score": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.0f"),
                 "total_amount": st.column_config.NumberColumn("Amount", format="$%.2f")
@@ -200,4 +181,3 @@ if not df.empty:
 
 else:
     st.markdown("### SYSTEM STANDBY... CHECK UPLINK")
-   
