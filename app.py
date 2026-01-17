@@ -22,6 +22,7 @@ st.markdown("""
     }
     .intel-header { color: #D32F2F; font-weight: bold; font-size: 0.9em; letter-spacing: 1px; }
     .intel-body { color: #EEE; font-size: 0.95em; margin-top: 4px; }
+    .intel-reason { color: #888; font-size: 0.85em; margin-top: 4px; font-style: italic;}
     
     div.stButton > button {
         background-color: #000;
@@ -58,50 +59,56 @@ def load_data():
 
 df = load_data()
 
-# --- 3. AGENT 3 LOGIC (UPDATED MODEL) ---
+# --- 3. AGENT 3: THE QUANTITATIVE ANALYST ---
 def execute_agent_3(sector_df):
     if not groq_client: return ["// ERROR: AI OFFLINE"]
     
-    # 1. AGGREGATE STATS (Graph Data)
+    # 1. CALCULATE AGGREGATES
     stats = sector_df.groupby('vendor_name').agg(
         total_spend=('total_amount', 'sum'),
         txn_count=('invoice_id', 'count')
     ).reset_index()
 
-    # 2. FILTER ANOMALIES (> $3k OR > 2 Txns)
+    # 2. FILTER: Focus on Frequency OR High Value
     targets = stats[
         (stats['total_spend'] > 3000) | 
         (stats['txn_count'] >= 2)
-    ].sort_values('total_spend', ascending=False).head(8)
+    ].sort_values('total_spend', ascending=False).head(10)
     
-    if targets.empty: return ["// STATUS: NOMINAL. NO STATISTICAL ANOMALIES."]
+    if targets.empty: return ["// STATUS: NOMINAL. DATA VOLUME TOO LOW FOR PATTERN ANALYSIS."]
 
-    # 3. EVIDENCE PREP
+    # 3. EVIDENCE PREP (Calculate Average Ticket for the AI)
     evidence_lines = []
     for _, row in targets.iterrows():
+        avg_ticket = row['total_spend'] / row['txn_count']
         evidence_lines.append(
-            f"VENDOR: {row['vendor_name']} | TOTAL: ${row['total_spend']:,.0f} | COUNT: {row['txn_count']}"
+            f"VENDOR: {row['vendor_name']} | TOTAL: ${row['total_spend']:,.0f} | COUNT: {row['txn_count']} | AVG_TICKET: ${avg_ticket:,.0f}"
         )
 
-    # 4. PROMPT (Using Llama 3.3)
+    # 4. THE "REASONING" PROMPT
     prompt = f"""
-    SYSTEM: You are a Forensic Statistician.
-    TASK: Analyze the Vendor Aggregates below. Identify patterns of STRUCTURING, VELOCITY, or CONCENTRATION RISK.
+    SYSTEM: You are a Forensic Auditor (Quantitative Specialist).
+    TASK: Analyze the Vendor Aggregates below. Identify the 3-4 most critical anomalies.
+    
+    CRITICAL INSTRUCTION: You must explain WHY a pattern is suspicious using numbers.
+    - If "Global Assets" has $45k (1 invoice), that is "Single Point Risk".
+    - If "Titanium" has $15k (3 invoices of $5k), that is "Structuring/Limit Evasion".
     
     INPUT DATA:
     {evidence_lines}
     
     OUTPUT FORMAT (Strict):
-    [VENDOR] :: [PATTERN NAME] (Total: $X)
+    [VENDOR] :: [PATTERN NAME] | [EXACT REASONING]
     
-    Example:
-    TITANIUM CONSULTING :: STRUCTURING PATTERN (Total: $14k)
+    Examples:
+    TITANIUM CONSULTING :: STRUCTURING RISK | Suspicious: 3 txns averaging $4,950 (Just below $5k limit).
+    GLOBAL ASSETS :: CONCENTRATION RISK | Single vendor holds 60% of sector spend ($45k).
+    SHELL FLEET :: VELOCITY ANOMALY | High frequency (15 txns) indicates potential card sharing.
     """
     
     try:
         res = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            # UPDATED MODEL: SOTA Open Source Model
             model="llama-3.3-70b-versatile",
             temperature=0.1
         )
@@ -145,7 +152,7 @@ if not df.empty:
             fig.update_layout(paper_bgcolor="#000", plot_bgcolor="#000", font=dict(color="#888", family="Courier New"))
             st.plotly_chart(fig)
 
-        # RIGHT: AGENT 3
+        # RIGHT: INTEL
         with c2:
             st.markdown("#### PATTERN RECOGNITION")
             if st.button("INITIALIZE FORENSIC SCAN", key=f"btn_{sector}"):
@@ -153,10 +160,19 @@ if not df.empty:
                     findings = execute_agent_3(sector_df)
                     for find in findings:
                         if len(find) > 5 and "::" in find:
+                            # Parse the new format
                             parts = find.split('::')
-                            title = parts[0]
-                            body = parts[1]
-                            st.markdown(f"<div class='intel-card'><div class='intel-header'>{title}</div><div class='intel-body'>{body}</div></div>", unsafe_allow_html=True)
+                            vendor_name = parts[0]
+                            rest = parts[1].split('|')
+                            pattern = rest[0]
+                            reason = rest[1] if len(rest) > 1 else "Anomaly detected."
+                            
+                            st.markdown(f"""
+                            <div class="intel-card">
+                                <div class="intel-header">{vendor_name} // {pattern}</div>
+                                <div class="intel-body">{reason}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
                         elif "STATUS:" in find:
                              st.info(find)
             else:
