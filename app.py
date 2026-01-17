@@ -5,20 +5,20 @@ import plotly.express as px
 import time
 from groq import Groq
 
-# --- 1. CONFIG: BLACK OPS MODE ---
+# --- 1. CONFIG: ENTERPRISE TERMINAL ---
 st.set_page_config(page_title="VANTAGE PROTOCOL", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #000000; color: #CCCCCC; font-family: 'Courier New', monospace; }
+    .stApp { background-color: #000000; color: #E0E0E0; font-family: 'Courier New', monospace; }
     
     /* TYPOGRAPHY */
     h1, h2, h3 { color: #FFFFFF; letter-spacing: -1px; text-transform: uppercase; font-weight: 800; }
     
     /* CARD SYSTEM */
     .intel-card {
-        background-color: #0D0D0D;
-        border-left: 3px solid #D32F2F; /* Blood Red */
+        background-color: #0F0F0F;
+        border-left: 3px solid #D32F2F;
         border-bottom: 1px solid #222;
         padding: 12px;
         margin-bottom: 10px;
@@ -62,61 +62,60 @@ def load_data():
 
 df = load_data()
 
-# --- 3. AGENT 3: THE PATTERN HUNTER ---
+# --- 3. AGENT 3 LOGIC REVISION: THE STATISTICIAN ---
 def execute_agent_3(sector_df):
     if not groq_client: return ["// ERROR: AI OFFLINE"]
     
-    # --- LOGIC UPDATE: LOWER THE SENSITIVITY THRESHOLD ---
-    # We now grab anything with a score > 30, ensuring we see structuring attempts.
-    # We sort by the highest amount first, as big money is the biggest risk.
-    targets = sector_df[sector_df['risk_score'] > 30].sort_values('total_amount', ascending=False).head(15)
-    
-    if targets.empty: return ["// SYSTEM STATUS: CLEAN. NO ANOMALIES ABOVE THRESHOLD."]
+    # --- STEP 1: AGGREGATE DATA (The core of the new logic) ---
+    # We are now calculating total spend and invoice count for every vendor.
+    vendor_aggregates = sector_df.groupby('vendor_name').agg(
+        total_spend=('total_amount', 'sum'),
+        invoice_count=('invoice_id', 'count')
+    ).reset_index()
 
-    # Prepare a dense evidence block for the AI
+    # --- STEP 2: IDENTIFY ANOMALIES ---
+    # We hunt for vendors with high total spend OR high frequency of invoices.
+    # THIS is what catches the structuring patterns.
+    targets = vendor_aggregates[
+        (vendor_aggregates['total_spend'] > 10000) | 
+        (vendor_aggregates['invoice_count'] >= 4)
+    ].sort_values('total_spend', ascending=False).head(5)
+    
+    if targets.empty:
+        # This will now only trigger if there are genuinely NO suspicious aggregates.
+        return ["// SYSTEM STATUS: NOMINAL. No high-volume or high-frequency anomalies detected."]
+
+    # --- STEP 3: PREPARE EVIDENCE BLOCK ---
     evidence_lines = []
     for _, row in targets.iterrows():
-        # Safely extract the issue and approver from the JSON flags
-        issue = "ANOMALY"
-        approver = "UNKNOWN"
-        try:
-            import json
-            flags = row['risk_flags']
-            if isinstance(flags, str): flags = json.loads(flags)
-            issue = flags.get('issue', 'ANOMALY').upper()
-            approver = flags.get('approver', 'SYSTEM').upper()
-        except: pass
-        
-        evidence_lines.append(f"VENDOR: {row['vendor_name']} | AMT: ${row['total_amount']} | DATE: {row['invoice_date']} | ISSUE: {issue} | AUTH: {approver}")
+        evidence_lines.append(
+            f"VENDOR: {row['vendor_name']} | TOTAL SPEND: ${row['total_spend']:,.0f} | INVOICE COUNT: {row['invoice_count']}"
+        )
 
-    # --- THE AGGRESSIVE PROMPT ---
-    # We are now commanding the AI to hunt for specific patterns in the provided data.
+    # --- STEP 4: THE NEW, AGGRESSIVE PROMPT ---
     prompt = f"""
-    SYSTEM: You are a Forensic Audit Algorithm. Your only purpose is to find fraud patterns.
-    TASK: Analyze the invoice rows below. DO NOT say 'nominal' or 'no issues'. Your job is to find the patterns, even if they are subtle.
+    SYSTEM: You are a Quantitative Forensic Analyst reporting to the board.
+    TASK: Your only job is to analyze the aggregate vendor data below and identify statistical patterns of potential fraud or waste.
     
-    HUNT FOR THESE SPECIFIC PATTERNS:
-    1. STRUCTURING: Multiple payments to the same vendor just below a common limit (e.g., $4950, $9900).
-    2. VELOCITY ABUSE: The same vendor paid multiple times in a very short period (e.g., minutes or a few days).
-    3. ROUND NUMBER BIAS: Payments of flat amounts like $500.00, $1000.00, especially for 'Consulting'.
-    4. DUPLICATE PAYMENTS: Identical amounts to the same vendor.
+    HUNT FOR:
+    1. STRUCTURING: High total spend spread across many small invoices.
+    2. CONCENTRATION RISK: A single vendor receiving a disproportionate amount of capital.
+    3. VELOCITY ABUSE: High invoice count in a short period (indicated by the count).
     
-    INPUT DATA:
+    INPUT DATA (Vendor Aggregates):
     {evidence_lines}
     
     OUTPUT FORMAT (STRICT):
-    [VENDOR] :: [PATTERN DETECTED] (Total Exposure: $X) -> [NAMES OF APPROVERS INVOLVED]
+    [VENDOR] :: [PATTERN DETECTED] (Total Exposure: $X across Y invoices)
     
-    Example:
-    TITANIUM CONSULTING :: STRUCTURING <$5k (Exposure: $19,800) -> AUTH: BOARD
-    APEX MACHINERY :: DUPLICATE BILLING (Exposure: $25,000) -> AUTH: MANAGER X
+    Be direct. Be clinical. Your job is to find the problem.
     """
     
     try:
         res = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-70b-8192",
-            temperature=0.1 # Low temperature makes the AI more factual and less creative
+            temperature=0.1
         )
         return res.choices[0].message.content.split('\n')
     except: return ["// ERROR: COMPUTATION FAILED"]
@@ -130,7 +129,6 @@ if not df.empty:
     df['risk_score'] = pd.to_numeric(df['risk_score'], errors='coerce').fillna(0)
     if 'department_name' not in df.columns: df['department_name'] = 'GENERAL'
 
-    # Extract meta fields for the main table
     def get_meta(x, key):
         try:
             import json
@@ -166,10 +164,9 @@ if not df.empty:
             btn_key = f"scan_{sector}"
             
             if st.button("INITIALIZE FORENSIC SCAN", key=btn_key):
-                with st.spinner("PROCESSING VECTORS..."):
+                with st.spinner("ANALYZING AGGREGATES..."):
                     findings = execute_agent_3(sector_df)
                     for find in findings:
-                        # Render only valid, formatted lines
                         if len(find) > 5 and "::" in find:
                             parts = find.split('::')
                             title = parts[0]
@@ -180,7 +177,7 @@ if not df.empty:
                                 <div class="intel-body">{body}</div>
                             </div>
                             """, unsafe_allow_html=True)
-                        elif "STATUS:" in find:
+                        elif "STATUS:" in find or "NOMINAL" in find:
                              st.info(find)
             else:
                 st.markdown("<div style='border:1px dashed #333; padding:40px; text-align:center; color:#555;'>AWAITING TRIGGER</div>", unsafe_allow_html=True)
