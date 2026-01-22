@@ -83,36 +83,51 @@ def execute_agent_3(full_df):
             f"VENDOR: {row['vendor_name']} | TOTAL: ${row['total_spend']:,.0f} | COUNT: {row['txn_count']} | AVG: ${avg_ticket:,.0f}"
         )
 
-    # 4. THE "OMNISCIENT" PROMPT
+    # 4. THE "PROBABILISTIC REASONING" PROMPT
     prompt = f"""
-    SYSTEM: You are an Advanced Pattern Recognition Algorithm.
-    TASK: Scan the vendor data below. Detect ANY mathematical or behavioral anomaly.
-    
-    PATTERNS TO ANALYZE:
-    1. STRUCTURING: Is the 'AVG' ticket suspiciously close to $5,000 or $10,000? (e.g. $4950).
-    2. VELOCITY: High 'COUNT' with Low/Med 'TOTAL' (Death by a thousand cuts).
-    3. DOMINANCE: Does one vendor hold > 30% of the total cash?
-    4. ROUND NUMBERS: Is the AVG exactly $500, $1000, $2000? (Human fabrication).
-    5. LOW VALUE SPAM: High count of very small payments.
-    
-    INPUT DATA:
-    {evidence_lines}
-    
-    OUTPUT FORMAT (Strict):
-    [VENDOR] :: [PATTERN DETECTED] (Reason: [Math explanation])
-    
-    Example:
-    TITANIUM CONSULTING :: STRUCTURING DETECTED (Reason: Avg $4,950 is 1% below $5k limit)
+    {{
+      "role": "Advanced Forensic Anomaly Hunter",
+      "core_mission": "Analyze aggregated vendor financial data to detect BOTH known exploitable patterns (Structuring, Velocity) AND emergent/random behavioral anomalies. Do not act as a calculator. Act as a Bayesian Investigator.",
+      
+      "input_context": {{
+        "dataset_type": "Vendor Aggregates (Total Spend, Transaction Count, Average Ticket)",
+        "data": {evidence_lines}
+      }},
+
+      "analysis_framework": [
+        {{
+          "vector": "STRUCTURING / SMURFING",
+          "logic": "Look for high transaction counts with Average Tickets just below standard approval limits ($2.5k, $5k, $10k).",
+          "probability_weight": "High"
+        }},
+        {{
+          "vector": "VELOCITY / FREQUENCY ABUSE",
+          "logic": "Look for high transaction counts relative to Total Spend (Death by a thousand cuts).",
+          "probability_weight": "Medium"
+        }},
+        {{
+          "vector": "ARTIFICIAL CONSISTENCY (ENTROPY)",
+          "logic": "Does the Average Ticket look 'too clean'? (e.g., exactly $500, $1000). Real business usually involves taxes and fractions.",
+          "probability_weight": "High"
+        }},
+        {{
+          "vector": "CONCENTRATION RISK",
+          "logic": "Is one vendor dominating the cash flow disproportionately compared to others?",
+          "probability_weight": "Low"
+        }}
+      ],
+
+      "instructions": [
+        "1. FORECAST NORMAL: Based on the list, establish a mental baseline for 'normal' vendor behavior.",
+        "2. IDENTIFY DEVIATIONS: Highlight vendors that deviate from this baseline statistically or behaviorally.",
+        "3. EXPLAIN WHY: You must provide a clear, forensic reason for every flag.",
+        "4. NO 'NOMINAL' STATUS: You must identify the top 3-5 most interesting patterns, even if weak."
+      ],
+
+      "output_format_strict": "Return a raw list of strings (no JSON formatting, just text lines) following this template:",
+      "output_template": "[VENDOR] :: [PATTERN NAME] (Confidence: X%) -> [FORENSIC REASONING]"
+    }}
     """
-    
-    try:
-        res = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.1
-        )
-        return res.choices[0].message.content.split('\n')
-    except: return ["// ERROR: COMPUTATION FAILED"]
 
 # --- 4. RENDER GLOBAL DASHBOARD ---
 st.markdown("<h1>VANTAGE PROTOCOL // GLOBAL OVERSIGHT</h1>")
