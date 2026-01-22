@@ -5,40 +5,48 @@ import plotly.express as px
 import time
 from groq import Groq
 
-# --- 1. CONFIG ---
+# --- 1. CONFIG: TITANIUM MODE ---
 st.set_page_config(page_title="VANTAGE PROTOCOL", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #000000; color: #CCCCCC; font-family: 'Courier New', monospace; }
+    /* GLOBAL BLACK THEME */
+    .stApp { background-color: #000000; color: #E0E0E0; font-family: 'Courier New', monospace; }
+    
+    /* TYPOGRAPHY */
     h1, h2, h3 { color: #FFFFFF; letter-spacing: -1px; text-transform: uppercase; font-weight: 800; }
     
-    /* INTEL CARD */
+    /* INTEL CARD SYSTEM */
     .intel-card {
         background-color: #0F0F0F;
-        border-left: 3px solid #D32F2F;
+        border-left: 3px solid #00D4FF; /* Cyan for Intel */
         border-bottom: 1px solid #222;
         padding: 15px;
         margin-bottom: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    .intel-header { color: #D32F2F; font-weight: bold; font-size: 1.0em; letter-spacing: 1px; }
-    .intel-body { color: #EEE; font-size: 0.95em; margin-top: 5px; }
+    .intel-header { color: #00D4FF; font-weight: bold; font-size: 1.0em; letter-spacing: 1px; }
+    .intel-body { color: #EEE; font-size: 0.95em; margin-top: 5px; font-family: sans-serif; }
     
+    /* CRITICAL ALERT OVERRIDE */
+    .critical { border-left: 3px solid #D32F2F !important; }
+    .critical .intel-header { color: #D32F2F !important; }
+
     /* BUTTONS */
     div.stButton > button {
         background-color: #000;
-        border: 1px solid #D32F2F;
-        color: #D32F2F;
+        border: 1px solid #00D4FF;
+        color: #00D4FF;
         width: 100%;
         font-family: monospace;
         text-transform: uppercase;
         letter-spacing: 2px;
         font-weight: bold;
         transition: 0.3s;
-        padding: 20px;
+        padding: 15px;
     }
     div.stButton > button:hover {
-        background-color: #D32F2F;
+        background-color: #00D4FF;
         color: #000;
     }
     hr { border-color: #222; margin: 40px 0; }
@@ -61,21 +69,21 @@ def load_data():
 
 df = load_data()
 
-# --- 3. AGENT 3: THE GLOBAL PATTERN HUNTER ---
+# --- 3. AGENT 3: THE PROBABILISTIC HUNTER ---
 def execute_agent_3(full_df):
     if not groq_client: return ["// ERROR: AI OFFLINE"]
     
-    # 1. AGGREGATE STATS (Global View)
+    # 1. CALCULATE AGGREGATES (The "Shape" of the data)
     stats = full_df.groupby('vendor_name').agg(
         total_spend=('total_amount', 'sum'),
         txn_count=('invoice_id', 'count')
     ).reset_index()
 
-    # 2. SELECT DATA FOR AI (Top 25 Vectors - High Spend OR High Frequency)
-    # We send MORE data now to let the AI find subtle patterns
+    # 2. SELECT BROAD TARGETS (Top 25 by Volume or Frequency)
+    # We purposefully cast a wide net to let the AI find the "needle in the haystack"
     targets = stats.sort_values(['total_spend', 'txn_count'], ascending=False).head(25)
     
-    # 3. PREPARE EVIDENCE BLOCK
+    # 3. DATA PREP
     evidence_lines = []
     for _, row in targets.iterrows():
         avg_ticket = row['total_spend'] / row['txn_count'] if row['txn_count'] > 0 else 0
@@ -83,7 +91,7 @@ def execute_agent_3(full_df):
             f"VENDOR: {row['vendor_name']} | TOTAL: ${row['total_spend']:,.0f} | COUNT: {row['txn_count']} | AVG: ${avg_ticket:,.0f}"
         )
 
-    # 4. THE "PROBABILISTIC REASONING" PROMPT
+    # 4. THE GIGANTIC JSON PROMPT
     prompt = f"""
     {{
       "role": "Advanced Forensic Anomaly Hunter",
@@ -128,6 +136,15 @@ def execute_agent_3(full_df):
       "output_template": "[VENDOR] :: [PATTERN NAME] (Confidence: X%) -> [FORENSIC REASONING]"
     }}
     """
+    
+    try:
+        res = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.3-70b-versatile",
+            temperature=0.1
+        )
+        return res.choices[0].message.content.split('\n')
+    except: return ["// ERROR: COMPUTATION FAILED"]
 
 # --- 4. RENDER GLOBAL DASHBOARD ---
 st.markdown("<h1>VANTAGE PROTOCOL // GLOBAL OVERSIGHT</h1>")
@@ -152,10 +169,9 @@ if not df.empty:
     
     # --- LEFT: THE PIE CHART (Capital Distribution) ---
     with c1:
-        st.markdown("#### TOTAL CAPITAL DISTRIBUTION")
+        st.markdown("#### CAPITAL DISTRIBUTION MAP")
         
         # Prepare Data for Pie
-        # Group small vendors into "Others" to keep chart clean
         pie_data = df.groupby('vendor_name')['total_amount'].sum().reset_index()
         pie_data = pie_data.sort_values('total_amount', ascending=False)
         
@@ -164,7 +180,7 @@ if not df.empty:
             pie_data, 
             values='total_amount', 
             names='vendor_name',
-            hole=0.5, # Donut Chart
+            hole=0.6, # Donut Chart
             color_discrete_sequence=px.colors.sequential.RdBu
         )
         
@@ -173,36 +189,37 @@ if not df.empty:
             plot_bgcolor="#000", 
             font=dict(color="#DDD", family="Courier New"),
             showlegend=False,
-            annotations=[dict(text='CASH<br>FLOW', x=0.5, y=0.5, font_size=20, showarrow=False, font_color='white')]
+            annotations=[dict(text='TOTAL<br>EXPOSURE', x=0.5, y=0.5, font_size=16, showarrow=False, font_color='white')]
         )
         fig.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig, use_container_width=True)
 
     # --- RIGHT: AGENT 3 INTELLIGENCE ---
     with c2:
-        st.markdown("#### FORENSIC PATTERN ANALYSIS")
+        st.markdown("#### PROBABILISTIC ANOMALY DETECTION")
         
         if st.button("INITIALIZE DEEP SCAN (GLOBAL)", key="global_scan"):
-            with st.spinner("SCANNING ALL VECTORS..."):
+            with st.spinner("AGENT 3: RUNNING BAYESIAN INFERENCE..."):
                 findings = execute_agent_3(df)
                 
                 # Check if AI returned nothing useful
-                valid_findings = False
                 for find in findings:
                     if len(find) > 5 and "::" in find:
-                        valid_findings = True
                         parts = find.split('::')
                         title = parts[0]
                         body = parts[1]
+                        
+                        # Check for High Confidence to style differently
+                        css_class = "intel-card"
+                        if "High" in body or "8" in body or "9" in body:
+                            css_class += " critical"
+                        
                         st.markdown(f"""
-                        <div class="intel-card">
+                        <div class="{css_class}">
                             <div class="intel-header">{title}</div>
                             <div class="intel-body">{body}</div>
                         </div>
                         """, unsafe_allow_html=True)
-                
-                if not valid_findings:
-                    st.info("// ANALYSIS COMPLETE. NO HIGH-PROBABILITY PATTERNS FOUND.")
                     
         else:
             st.markdown("<div style='border:1px dashed #333; padding:60px; text-align:center; color:#555;'>AWAITING TRIGGER</div>", unsafe_allow_html=True)
